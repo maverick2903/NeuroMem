@@ -1,0 +1,6 @@
+torch
+datasets
+sentence-transformers
+tqdm
+PyYAML
+scipy

@@ -1,0 +1,13 @@
+muses/
+├── configs/
+│   └── M1_config.yaml          # Hyperparameters and settings
+├── src/
+│   ├── data_loader.py          # PyTorch Dataset and DataLoader
+|   ├── evaluation.py           # Evaluating performance with baseline
+│   ├── models.py               # The multi-scale embedding model
+│   ├── losses.py               # The hierarchical contrastive loss
+│   └── train.py                # The main training script
+├── notebooks/
+│   └── 
+└── MuSES_north_star.md
+

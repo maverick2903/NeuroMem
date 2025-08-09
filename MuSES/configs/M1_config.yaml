@@ -1,0 +1,10 @@
+model:
+  name: all-MiniLM-L6-v2
+  token_dim: 256
+  sentence_dim: 512
+  doc_dim: 1024
+
+training:
+  batch_size: 2
+  epochs: 1
+  learning_rate: 2.0e-5
