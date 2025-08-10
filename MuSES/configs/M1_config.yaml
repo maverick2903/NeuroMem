@@ -1,10 +1,15 @@
 model:
   name: all-MiniLM-L6-v2
-  token_dim: 256
-  sentence_dim: 512
-  doc_dim: 1024
+  token_dim: 128
+  sentence_dim: 256
+  doc_dim: 512
 
 training:
-  batch_size: 2
-  epochs: 1
-  learning_rate: 2.0e-5
+  batch_size: 64
+  epochs: 3
+  learning_rate: 5e-6
+  temperature: 0.07
+  doc_size: 4
+  loss_alpha: 0.5
+  device: cuda
+  model_save_path: ./models/muses_model.pt

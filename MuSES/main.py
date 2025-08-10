@@ -15,13 +15,6 @@ for key, value in config_nested.items():
     for sub_key, sub_value in value.items():
         CONFIG[f'{key}_{sub_key}'] = sub_value
 
-# Add additional parameters not in the YAML file
-CONFIG['device'] = 'cuda' if torch.cuda.is_available() else 'cpu'
-CONFIG['temperature'] = 0.07  # Common default for contrastive losses
-CONFIG['loss_alpha'] = 0.5  # Equal weight to token-sentence and sentence-document losses
-CONFIG['model_save_path'] = 'muses_model.pth'
-CONFIG['doc_size'] = 8  # A reasonable default for document size
-
 # Make CONFIG globally accessible for the other scripts
 # This is a simple way to share config without changing function signatures.
 import src.data_loader

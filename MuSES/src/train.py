@@ -4,6 +4,7 @@ from sentence_transformers import SentenceTransformer
 from models import MultiScaleEncoder
 from losses import MuSESLoss
 import os
+import tqdm
 
 def train(train_examples, test_examples):
     print("\nInitializing model, loss, and optimizer...")

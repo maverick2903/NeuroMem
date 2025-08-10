@@ -8,65 +8,54 @@ from models import MultiScaleEncoder
 from losses import MuSESLoss
 
 def prepare_data():
-    print("\nLoading SNLI dataset...")
-    snli_dataset = load_dataset('snli', split='train').filter(lambda x: x['label'] == 0)
-    all_sentences = []
-    for item in snli_dataset:
-        if item['premise'] and item['hypothesis']:
-            all_sentences.append(item['premise'])
-            all_sentences.append(item['hypothesis'])
-    random.shuffle(all_sentences)
-    documents = [all_sentences[i:i+CONFIG['doc_size']] for i in range(0, len(all_sentences) - CONFIG['doc_size'], CONFIG['doc_size'])]
+    """
+    Loads and processes the Wikipedia dataset to create a hierarchical structure
+    of documents (paragraphs) and sentences.
+    """
+    # Download the 'punkt' sentence tokenizer from NLTK if not already present
+    try:
+        nltk.data.find('tokenizers/punkt')
+    except nltk.downloader.DownloadError:
+        print("Downloading NLTK sentence tokenizer (punkt)...")
+        nltk.download('punkt')
+
+    print("\nLoading Wikipedia dataset...")
+    # We use 'train[:2%]' to load only the first 2% of the dataset for faster experimentation.
+    # For a full run, you could increase this or remove the slice altogether.
+    wiki_dataset = load_dataset('wikipedia', '20220301.en', split='train[:500]', trust_remote_code=True)
+
     train_examples = []
-    for doc_id, doc in enumerate(documents):
-        for sentence in doc:
-            train_examples.append(InputExample(texts=[sentence], label=doc_id))
+    # Each paragraph with multiple sentences will be treated as a unique "document"
+    # for the purpose of the sentence-to-document loss.
+    doc_id_counter = 0
+
+    print("Processing articles into paragraphs and sentences...")
+    for article in tqdm.tqdm(wiki_dataset):
+        # Split the article's text into paragraphs based on double newlines
+        paragraphs = article['text'].split('\n\n')
+        for paragraph in paragraphs:
+            paragraph = paragraph.strip()
+            # Filter out very short paragraphs or section titles
+            if len(paragraph) < 100:
+                continue
+
+            # Use NLTK to robustly split the paragraph into sentences
+            sentences = sent_tokenize(paragraph)
+
+            # We only care about paragraphs that have more than one sentence
+            if len(sentences) > 1:
+                for sentence in sentences:
+                    # The label is the ID of the paragraph (our "document")
+                    train_examples.append(InputExample(texts=[sentence], label=doc_id_counter))
+                # Increment the ID for the next paragraph
+                doc_id_counter += 1
+
+    # Split all the sentences we've gathered into a train and test set.
     train_size = int(len(train_examples) * 0.9)
     train_data, test_data = train_examples[:train_size], train_examples[train_size:]
-    print(f"Total documents created: {len(documents)}")
+
+    print(f"\nTotal paragraphs processed as 'documents': {doc_id_counter}")
+    print(f"Total sentences loaded: {len(train_examples)}")
     print(f"Number of training examples (sentences): {len(train_data)}")
     print(f"Number of testing examples (sentences): {len(test_data)}")
     return train_data, test_data
-
-def train(train_examples, test_examples):
-    print("\nInitializing model, loss, and optimizer...")
-    model = MultiScaleEncoder(model_name=CONFIG['model_name'], token_dim=CONFIG['token_dim'], sentence_dim=CONFIG['sentence_dim'], doc_dim=CONFIG['doc_dim']).to(CONFIG['device'])
-    loss_fn = MuSESLoss(temperature=CONFIG['temperature'], device=CONFIG['device'])
-    optimizer = torch.optim.AdamW(model.parameters(), lr=CONFIG['learning_rate'])
-    def collate_fn(batch):
-        texts, doc_ids = [b.texts[0] for b in batch], torch.LongTensor([b.label for b in batch])
-        features = model.base_model.tokenizer(texts, padding=True, truncation=True, return_tensors="pt")
-        return features, doc_ids
-    train_loader = DataLoader(train_examples, batch_size=CONFIG['batch_size'], shuffle=True, collate_fn=collate_fn)
-    test_loader = DataLoader(test_examples, batch_size=CONFIG['batch_size'], shuffle=False, collate_fn=collate_fn)
-    best_eval_loss = float('inf')
-    for epoch in range(CONFIG['epochs']):
-        print(f"\n--- Epoch {epoch+1}/{CONFIG['epochs']} ---")
-        model.train()
-        total_train_loss, total_t2s_loss, total_s2d_loss = 0, 0, 0
-        for features, doc_ids in tqdm.tqdm(train_loader, desc="Training"):
-            features, doc_ids = {k: v.to(CONFIG['device']) for k, v in features.items()}, doc_ids.to(CONFIG['device'])
-            optimizer.zero_grad()
-            embeddings = model(features)
-            loss, t2s_loss, s2d_loss = loss_fn(embeddings, doc_ids)
-            loss.backward()
-            optimizer.step()
-            total_train_loss += loss.item()
-            total_t2s_loss += t2s_loss.item()
-            total_s2d_loss += s2d_loss.item() if torch.is_tensor(s2d_loss) else s2d_loss
-        print(f"Avg Train Loss: {total_train_loss / len(train_loader):.4f} | Token-Sentence Loss: {total_t2s_loss / len(train_loader):.4f} | Sentence-Doc Loss: {total_s2d_loss / len(train_loader):.4f}")
-
-        model.eval()
-        total_eval_loss = 0
-        with torch.no_grad():
-            for features, doc_ids in tqdm.tqdm(test_loader, desc="Evaluating"):
-                features, doc_ids = {k: v.to(CONFIG['device']) for k, v in features.items()}, doc_ids.to(CONFIG['device'])
-                embeddings = model(features)
-                loss, _, _ = loss_fn(embeddings, doc_ids)
-                total_eval_loss += loss.item()
-        avg_eval_loss = total_eval_loss / len(test_loader)
-        print(f"Average Evaluation Loss: {avg_eval_loss:.4f}")
-        if avg_eval_loss < best_eval_loss:
-            best_eval_loss = avg_eval_loss
-            torch.save(model.state_dict(), CONFIG['model_save_path'])
-            print(f"New best model saved to {CONFIG['model_save_path']} with loss: {best_eval_loss:.4f}")
